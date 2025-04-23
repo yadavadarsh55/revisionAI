@@ -4,6 +4,7 @@ import re
 from sentence_transformers import SentenceTransformer
 from sklearn.cluster import KMeans
 from keybert import KeyBERT
+import hdbscan
 
 def extract_text_from_pdf(file):
     reader = PdfReader(file)
@@ -34,6 +35,16 @@ def cluster_sentences(embeddings, sentences, n_clusters=3):
         clusters[label].append(sentences[idx])
     return clusters
 
+def optimal_clusters_sentences(embeddings, sentences):
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=2,min_samples=1, metric='euclidean')
+    labels = clusterer.fit_predict(embeddings)
+    clusters = {}
+    for idx, label in enumerate(labels):
+        if label == -1: 
+            continue
+        clusters.setdefault(label, []).append(sentences[idx])
+    return clusters
+
 def get_cluster_title(sentences, embedder, top_n=2):
     if not sentences:
         return ["Untitled"]
@@ -42,7 +53,7 @@ def get_cluster_title(sentences, embedder, top_n=2):
     keywords = kw_model.extract_keywords(cluster_text, top_n=top_n, stop_words='english')
     return [kw[0] for kw in keywords] if keywords else ["Untitled"]
 
-def clustered_outputs(clustered_sentences):
+def clustered_outputs(clustered_sentences, embedder):
     final_output = []
     for cluster_id, sentences in clustered_sentences.items():
         keywords = get_cluster_title(sentences, embedder)
@@ -53,12 +64,17 @@ def clustered_outputs(clustered_sentences):
         })
     return final_output
 
-if(__name__ == "__main__"):
-    text = extract_text_from_pdf("sample_notes.pdf")
+def get_topics(pdf_file, embedder):
+    text = extract_text_from_pdf(pdf_file)
     text = clean_text(text)
     sentences = text_into_sent(text=text)
-    embedder = SentenceTransformer('all-MiniLM-L6-v2')
     sentence_embedding = sentence_embeddigns(embedder, sentences)
-    clustered = cluster_sentences(embeddings=sentence_embedding, sentences=sentences, n_clusters=10)
-    final_sentences = clustered_outputs(clustered)
-    print(final_sentences)
+    clustered = optimal_clusters_sentences(embeddings=sentence_embedding, sentences=sentences)
+    final_sentences = clustered_outputs(clustered, embedder)
+    return final_sentences
+
+if(__name__ == "__main__"):
+    embedder = SentenceTransformer('all-MiniLM-L6-v2')
+    final_output = get_topics("sample_notes.pdf")
+    print(final_output)
+    
